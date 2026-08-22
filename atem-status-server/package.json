@@ -1,0 +1,16 @@
+{
+  "name": "atem-status-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone server that watches a Blackmagic ATEM's built-in streaming state and exposes a plain 1/0 endpoint (gated to a configurable time window) for Max's [maxurl] to poll.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "atem-connection": "^3.9.0",
+    "express": "^5.2.1",
+    "node-cron": "^4.6.0"
+  }
+}

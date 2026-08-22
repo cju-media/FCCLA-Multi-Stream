@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ATEM Status Server</title>
+<style>
+  :root {
+    --bg: #111418;
+    --panel: #191d24;
+    --border: #2a2f3a;
+    --text: #e8ebf0;
+    --muted: #8a93a3;
+    --accent: #4c8dff;
+    --on: #35d07f;
+    --off: #ff5c5c;
+    --warn: #f5b942;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    padding: 32px 20px 60px;
+  }
+  main {
+    max-width: 760px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .sub {
+    color: var(--muted);
+    font-size: 13px;
+    margin: 0;
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+  .status-dot {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    font-weight: 700;
+    flex-shrink: 0;
+    background: #333;
+    transition: background 0.2s ease;
+  }
+  .status-dot.on { background: var(--on); color: #08341c; }
+  .status-dot.off { background: var(--off); color: #3a0d0d; }
+  .status-meta { font-size: 13px; color: var(--muted); line-height: 1.5; }
+  .status-meta b { color: var(--text); }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .badge.yes { background: rgba(53,208,127,0.15); color: var(--on); }
+  .badge.no { background: rgba(255,92,92,0.15); color: var(--off); }
+  .badge.warn { background: rgba(245,185,66,0.15); color: var(--warn); }
+
+  .feed-url {
+    margin-top: 14px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    background: #0d0f13;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--accent);
+    word-break: break-all;
+  }
+  .feed-url button {
+    flex-shrink: 0;
+  }
+
+  h2 { font-size: 14px; margin: 0 0 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+
+  form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+  label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 6px; }
+  input[type=text], input[type=time] {
+    width: 100%;
+    background: #0d0f13;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 9px 10px;
+    font-size: 14px;
+  }
+  input[type=text]:focus, input[type=time]:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .full { grid-column: 1 / -1; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+
+  button {
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: #232833;
+    color: var(--text);
+    border-radius: 8px;
+    padding: 9px 16px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  button:hover { background: #2b3140; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #08152e; }
+  button.primary:hover { filter: brightness(1.08); }
+  button.ghost { background: transparent; }
+  button.active { outline: 2px solid var(--accent); }
+
+  .override-buttons { display: flex; gap: 8px; }
+
+  #saveMsg { font-size: 12.5px; color: var(--on); min-height: 16px; }
+
+  .log {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    color: var(--muted);
+    background: #0d0f13;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    max-height: 220px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <h1>ATEM Status Server</h1>
+    <p class="sub">Watches the ATEM's built-in streaming state, gates it to a time window, and serves a plain 1/0 for Max's <code>[maxurl]</code>.</p>
+  </div>
+
+  <section class="panel">
+    <div class="status-row">
+      <div id="statusDot" class="status-dot off">0</div>
+      <div class="status-meta">
+        <div><b id="statusLabel">OFF</b> &mdash; effective value served at <code>/status</code></div>
+        <div style="margin-top:6px;">
+          ATEM connected: <span id="connectedBadge" class="badge no">no</span>
+          &nbsp; ATEM streaming: <span id="streamingBadge" class="badge no">no</span>
+          &nbsp; in window now: <span id="windowBadge" class="badge no">no</span>
+        </div>
+        <div style="margin-top:6px;" id="lastReason">&mdash;</div>
+      </div>
+    </div>
+    <div class="feed-url">
+      <span id="feedUrl">http://localhost:4200/status</span>
+      <button class="ghost copyBtn" data-target="feedUrl">Copy</button>
+    </div>
+    <div class="feed-url">
+      <span id="rtmpUrlFeed">http://localhost:4200/rtmp-url</span>
+      <button class="ghost copyBtn" data-target="rtmpUrlFeed">Copy</button>
+    </div>
+    <p class="sub" style="margin:10px 0 0;">Two <code>[maxurl]</code> objects total: <code>/status</code> to know when to start/stop, <code>/rtmp-url</code> for the full URL to hand <code>jit.rtmp.send~</code>. The base URL and key are also available separately below, if you ever need them apart.</p>
+    <div class="feed-url" style="margin-top:14px;">
+      <span id="streamUrlFeed">http://localhost:4200/stream-url</span>
+      <button class="ghost copyBtn" data-target="streamUrlFeed">Copy</button>
+    </div>
+    <div class="feed-url">
+      <span id="streamKeyFeed">http://localhost:4200/stream-key</span>
+      <button class="ghost copyBtn" data-target="streamKeyFeed">Copy</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Manual Override</h2>
+    <div class="override-buttons">
+      <button data-mode="auto" class="modeBtn">Auto (default)</button>
+      <button data-mode="on" class="modeBtn">Force ON</button>
+      <button data-mode="off" class="modeBtn">Force OFF</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Configuration</h2>
+    <form id="configForm">
+      <div class="full">
+        <label for="atemIp">ATEM IP address</label>
+        <input type="text" id="atemIp" placeholder="192.168.1.240" />
+      </div>
+      <div>
+        <label for="windowStart">Window start</label>
+        <input type="time" id="windowStart" />
+      </div>
+      <div>
+        <label for="windowEnd">Window end</label>
+        <input type="time" id="windowEnd" />
+      </div>
+      <div class="full checkbox-row">
+        <input type="checkbox" id="armed" />
+        <label for="armed" style="margin:0;">Armed (uncheck to ignore ATEM going live entirely)</label>
+      </div>
+      <div class="full">
+        <label for="streamUrl">Stream URL (RTMP destination)</label>
+        <input type="text" id="streamUrl" placeholder="rtmp://your-server/live" />
+      </div>
+      <div class="full">
+        <label for="streamKey">Stream key</label>
+        <div class="row">
+          <input type="password" id="streamKey" placeholder="stream key" style="flex:1;" />
+          <button type="button" id="toggleKeyBtn" class="ghost">Show</button>
+        </div>
+      </div>
+      <div class="full">
+        <label>Full RTMP URL that /rtmp-url will serve (url + key joined)</label>
+        <div class="feed-url" style="margin-top:0;">
+          <span id="rtmpPreview">(set Stream URL and Stream key above)</span>
+          <button type="button" id="copyRtmpPreview" class="ghost">Copy</button>
+        </div>
+      </div>
+      <div class="full row">
+        <button type="submit" class="primary">Save</button>
+        <span id="saveMsg"></span>
+      </div>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Log</h2>
+    <div class="log" id="log">loading…</div>
+  </section>
+</main>
+
+<script>
+const dot = document.getElementById('statusDot');
+const label = document.getElementById('statusLabel');
+const connectedBadge = document.getElementById('connectedBadge');
+const streamingBadge = document.getElementById('streamingBadge');
+const windowBadge = document.getElementById('windowBadge');
+const lastReason = document.getElementById('lastReason');
+const logEl = document.getElementById('log');
+const feedUrl = document.getElementById('feedUrl');
+const form = document.getElementById('configForm');
+const saveMsg = document.getElementById('saveMsg');
+let formFocused = false;
+
+feedUrl.textContent = `${location.origin}/status`;
+document.getElementById('rtmpUrlFeed').textContent = `${location.origin}/rtmp-url`;
+document.getElementById('streamUrlFeed').textContent = `${location.origin}/stream-url`;
+document.getElementById('streamKeyFeed').textContent = `${location.origin}/stream-key`;
+document.querySelectorAll('.copyBtn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const target = document.getElementById(btn.dataset.target);
+    navigator.clipboard.writeText(target.textContent);
+  });
+});
+
+const streamUrlInput = document.getElementById('streamUrl');
+const streamKeyInput = document.getElementById('streamKey');
+const rtmpPreview = document.getElementById('rtmpPreview');
+
+function joinRtmp(url, key) {
+  url = (url || '').trim();
+  key = (key || '').trim();
+  if (!url) return '';
+  if (!key) return url;
+  return url.replace(/\/+$/, '') + '/' + key.replace(/^\/+/, '');
+}
+
+function updateRtmpPreview() {
+  const url = streamUrlInput.value;
+  const key = streamKeyInput.value;
+  const full = joinRtmp(url, key);
+  if (!full) {
+    rtmpPreview.textContent = '(set Stream URL and Stream key above)';
+    return;
+  }
+  const showing = streamKeyInput.type === 'text';
+  rtmpPreview.textContent = showing || !key.trim() ? full : joinRtmp(url, '•'.repeat(key.trim().length));
+}
+
+document.getElementById('copyRtmpPreview').addEventListener('click', () => {
+  navigator.clipboard.writeText(joinRtmp(streamUrlInput.value, streamKeyInput.value));
+});
+
+streamUrlInput.addEventListener('input', updateRtmpPreview);
+streamKeyInput.addEventListener('input', updateRtmpPreview);
+
+document.getElementById('toggleKeyBtn').addEventListener('click', (e) => {
+  const showing = streamKeyInput.type === 'text';
+  streamKeyInput.type = showing ? 'password' : 'text';
+  e.target.textContent = showing ? 'Show' : 'Hide';
+  updateRtmpPreview();
+});
+
+function setBadge(el, ok, yesText = 'yes', noText = 'no') {
+  el.textContent = ok ? yesText : noText;
+  el.className = 'badge ' + (ok ? 'yes' : 'no');
+}
+
+async function refresh() {
+  try {
+    const res = await fetch('/state');
+    const data = await res.json();
+
+    const on = data.effective === 1;
+    dot.textContent = on ? '1' : '0';
+    dot.className = 'status-dot ' + (on ? 'on' : 'off');
+    label.textContent = on ? 'LIVE' : 'OFF';
+
+    setBadge(connectedBadge, data.runtime.connected);
+    setBadge(streamingBadge, data.runtime.atemStreaming);
+    setBadge(windowBadge, data.inWindowNow);
+
+    lastReason.textContent = data.runtime.lastReason || '—';
+    logEl.textContent = data.runtime.log.join('\n');
+
+    document.querySelectorAll('.modeBtn').forEach((b) => {
+      b.classList.toggle('active', b.dataset.mode === data.runtime.mode);
+    });
+
+    if (!formFocused) {
+      document.getElementById('atemIp').value = data.config.atemIp || '';
+      document.getElementById('windowStart').value = data.config.windowStart || '';
+      document.getElementById('windowEnd').value = data.config.windowEnd || '';
+      document.getElementById('armed').checked = !!data.config.armed;
+      document.getElementById('streamUrl').value = data.config.streamUrl || '';
+      document.getElementById('streamKey').value = data.config.streamKey || '';
+      updateRtmpPreview();
+    }
+  } catch (e) {
+    lastReason.textContent = 'Could not reach server: ' + e.message;
+  }
+}
+
+document.querySelectorAll('input').forEach((el) => {
+  el.addEventListener('focus', () => (formFocused = true));
+  el.addEventListener('blur', () => (formFocused = false));
+});
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    atemIp: document.getElementById('atemIp').value.trim(),
+    windowStart: document.getElementById('windowStart').value,
+    windowEnd: document.getElementById('windowEnd').value,
+    armed: document.getElementById('armed').checked,
+    streamUrl: document.getElementById('streamUrl').value.trim(),
+    streamKey: document.getElementById('streamKey').value.trim(),
+  };
+  const res = await fetch('/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (res.ok) {
+    saveMsg.textContent = 'Saved.';
+    setTimeout(() => (saveMsg.textContent = ''), 2000);
+  } else {
+    const err = await res.json();
+    saveMsg.textContent = 'Error: ' + err.error;
+    saveMsg.style.color = 'var(--off)';
+  }
+  refresh();
+});
+
+document.querySelectorAll('.modeBtn').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    await fetch('/override', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: btn.dataset.mode }),
+    });
+    refresh();
+  });
+});
+
+refresh();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>
