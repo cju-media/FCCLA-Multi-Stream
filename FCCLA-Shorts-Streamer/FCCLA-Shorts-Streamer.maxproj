@@ -2,7 +2,7 @@
     "name": "FCCLA-Shorts-Streamer",
     "version": 1,
     "creationdate": 3870210534,
-    "modificationdate": 3870210557,
+    "modificationdate": 3870347656,
     "viewrect": [ 25.0, 111.0, 300.0, 500.0 ],
     "autoorganize": 1,
     "hideprojectwindow": 0,
@@ -14,6 +14,16 @@
                 "kind": "patcher",
                 "local": 1,
                 "toplevel": 1
+            },
+            "cameraGrabber_me.maxpat": {
+                "kind": "patcher",
+                "local": 1
+            }
+        },
+        "externals": {
+            "jit.rtmp.send~.mxo": {
+                "kind": "object",
+                "local": 1
             }
         }
     },
