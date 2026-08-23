@@ -9,8 +9,98 @@
             "modernui": 1
         },
         "classnamespace": "box",
-        "rect": [ 456.0, 378.0, 1000.0, 780.0 ],
+        "rect": [ 805.0, 241.0, 1000.0, 780.0 ],
         "boxes": [
+            {
+                "box": {
+                    "code": "radius = 10;\r\ncount = 0;\r\npx = 1/dim;\r\nsum = 0;\r\n\r\n\r\nfor (y = -radius; y <= radius; y += 1)\r\n    {\r\n        for (x = -radius; x <= radius; x += 1) \r\n        {\n            sum += sample(in1, norm + vec(x, y) * px);\n            count += 1;\r\n        }\r\n    }\r\n    \r\nout1 = sum/count;",
+                    "fontface": 0,
+                    "fontname": "<Monospaced>",
+                    "fontsize": 12.0,
+                    "id": "obj-62",
+                    "maxclass": "jit.gl.pix.codebox",
+                    "numinlets": 1,
+                    "numoutlets": 2,
+                    "outlettype": [ "jit_gl_texture", "" ],
+                    "patching_rect": [ 736.0, 324.0, 248.0, 104.0 ]
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-58",
+                    "maxclass": "newobj",
+                    "numinlets": 1,
+                    "numoutlets": 2,
+                    "outlettype": [ "", "" ],
+                    "patching_rect": [ 736.0, 438.0, 241.0, 22.0 ],
+                    "text": "jit.gl.videoplane @layer 2 @depth_enable 1"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-56",
+                    "maxclass": "comment",
+                    "numinlets": 1,
+                    "numoutlets": 0,
+                    "patching_rect": [ 98.0, 528.0, 84.0, 20.0 ],
+                    "text": "Open Preview"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-54",
+                    "maxclass": "toggle",
+                    "numinlets": 1,
+                    "numoutlets": 1,
+                    "outlettype": [ "int" ],
+                    "parameter_enable": 0,
+                    "patching_rect": [ 67.0, 528.0, 24.0, 24.0 ]
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-14",
+                    "maxclass": "message",
+                    "numinlets": 2,
+                    "numoutlets": 1,
+                    "outlettype": [ "" ],
+                    "patching_rect": [ 67.0, 556.0, 59.0, 22.0 ],
+                    "text": "visible $1"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-10",
+                    "maxclass": "message",
+                    "numinlets": 2,
+                    "numoutlets": 1,
+                    "outlettype": [ "" ],
+                    "patching_rect": [ 989.0, 212.0, 228.0, 22.0 ],
+                    "text": "set \"STREAM-PROGRAM (HDMI)\", bang"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-6",
+                    "maxclass": "newobj",
+                    "numinlets": 1,
+                    "numoutlets": 1,
+                    "outlettype": [ "bang" ],
+                    "patching_rect": [ 989.0, 185.0, 58.0, 22.0 ],
+                    "text": "loadbang"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-5",
+                    "maxclass": "newobj",
+                    "numinlets": 1,
+                    "numoutlets": 1,
+                    "outlettype": [ "" ],
+                    "patching_rect": [ 710.0, 77.0, 70.0, 22.0 ],
+                    "text": "loadmess 1"
+                }
+            },
             {
                 "box": {
                     "id": "obj-2",
@@ -102,12 +192,11 @@
             {
                 "box": {
                     "id": "obj-45",
-                    "linecount": 3,
                     "maxclass": "message",
                     "numinlets": 2,
                     "numoutlets": 1,
                     "outlettype": [ "" ],
-                    "patching_rect": [ 397.0, 299.0, 121.0, 49.0 ]
+                    "patching_rect": [ 397.0, 299.0, 121.0, 22.0 ]
                 }
             },
             {
@@ -116,7 +205,7 @@
                     "maxclass": "comment",
                     "numinlets": 1,
                     "numoutlets": 0,
-                    "patching_rect": [ 526.0, 305.0, 85.0, 20.0 ],
+                    "patching_rect": [ 524.0, 300.0, 85.0, 20.0 ],
                     "text": "Stream RTMP"
                 }
             },
@@ -194,12 +283,13 @@
             {
                 "box": {
                     "id": "obj-37",
+                    "linecount": 4,
                     "maxclass": "newobj",
                     "numinlets": 1,
                     "numoutlets": 2,
                     "outlettype": [ "", "" ],
-                    "patching_rect": [ 675.0, 323.0, 181.0, 22.0 ],
-                    "text": "jit.gl.videoplane @scale 0.5 0.27"
+                    "patching_rect": [ 639.0, 516.0, 308.0, 62.0 ],
+                    "text": "jit.gl.videoplane @scale 0.5 0.27 0. @layer 1 @depth_enable 1 @rotatexyz -0.75778 0.000487 -0.016135 @drawto shorts @position -0.005163 0.005164 0.005576"
                 }
             },
             {
@@ -209,7 +299,7 @@
                     "numinlets": 1,
                     "numoutlets": 2,
                     "outlettype": [ "jit_gl_texture", "" ],
-                    "patching_rect": [ 675.0, 280.0, 220.0, 22.0 ],
+                    "patching_rect": [ 639.0, 473.0, 220.0, 22.0 ],
                     "text": "jit.gl.texture @dim 1080 1920 @adapt 0"
                 }
             },
@@ -238,17 +328,6 @@
             },
             {
                 "box": {
-                    "id": "obj-26",
-                    "maxclass": "message",
-                    "numinlets": 2,
-                    "numoutlets": 1,
-                    "outlettype": [ "" ],
-                    "patching_rect": [ 880.0, 96.0, 76.0, 22.0 ],
-                    "text": "getsourcelist"
-                }
-            },
-            {
-                "box": {
                     "id": "obj-23",
                     "maxclass": "newobj",
                     "numinlets": 3,
@@ -261,7 +340,7 @@
             {
                 "box": {
                     "id": "obj-27",
-                    "items": "<empty>",
+                    "items": [ "test2", ",", "STREAM-PROGRAM", "(HDMI)", ",", "test" ],
                     "maxclass": "umenu",
                     "numinlets": 1,
                     "numoutlets": 3,
@@ -283,17 +362,6 @@
             },
             {
                 "box": {
-                    "id": "obj-29",
-                    "maxclass": "toggle",
-                    "numinlets": 1,
-                    "numoutlets": 1,
-                    "outlettype": [ "int" ],
-                    "parameter_enable": 0,
-                    "patching_rect": [ 710.0, 76.0, 24.0, 24.0 ]
-                }
-            },
-            {
-                "box": {
                     "id": "obj-30",
                     "maxclass": "newobj",
                     "numinlets": 2,
@@ -310,7 +378,7 @@
                     "numinlets": 1,
                     "numoutlets": 3,
                     "outlettype": [ "jit_gl_texture", "bang", "" ],
-                    "patching_rect": [ 670.0, 392.0, 618.0, 22.0 ],
+                    "patching_rect": [ 67.0, 600.0, 618.0, 22.0 ],
                     "text": "jit.world shorts @size 540 960 @dim 1080 1920 @visible 0 @enable 1 @erase_color 0. 0. 0. 1. @output_texture 1"
                 }
             },
@@ -448,6 +516,18 @@
             },
             {
                 "patchline": {
+                    "destination": [ "obj-27", 0 ],
+                    "source": [ "obj-10", 0 ]
+                }
+            },
+            {
+                "patchline": {
+                    "destination": [ "obj-16", 0 ],
+                    "source": [ "obj-14", 0 ]
+                }
+            },
+            {
+                "patchline": {
                     "destination": [ "obj-19", 0 ],
                     "source": [ "obj-15", 0 ]
                 }
@@ -511,13 +591,6 @@
             {
                 "patchline": {
                     "destination": [ "obj-28", 0 ],
-                    "midpoints": [ 889.5, 147.0, 719.5, 147.0 ],
-                    "source": [ "obj-26", 0 ]
-                }
-            },
-            {
-                "patchline": {
-                    "destination": [ "obj-28", 0 ],
                     "midpoints": [ 1030.0, 306.0, 1135.0, 306.0, 1135.0, 147.0, 719.5, 147.0 ],
                     "source": [ "obj-27", 1 ]
                 }
@@ -532,13 +605,15 @@
             {
                 "patchline": {
                     "destination": [ "obj-36", 0 ],
+                    "order": 1,
                     "source": [ "obj-28", 1 ]
                 }
             },
             {
                 "patchline": {
-                    "destination": [ "obj-30", 0 ],
-                    "source": [ "obj-29", 0 ]
+                    "destination": [ "obj-62", 0 ],
+                    "order": 0,
+                    "source": [ "obj-28", 1 ]
                 }
             },
             {
@@ -639,6 +714,12 @@
             },
             {
                 "patchline": {
+                    "destination": [ "obj-30", 0 ],
+                    "source": [ "obj-5", 0 ]
+                }
+            },
+            {
+                "patchline": {
                     "destination": [ "obj-45", 0 ],
                     "source": [ "obj-51", 0 ]
                 }
@@ -647,6 +728,24 @@
                 "patchline": {
                     "destination": [ "obj-13", 0 ],
                     "source": [ "obj-52", 0 ]
+                }
+            },
+            {
+                "patchline": {
+                    "destination": [ "obj-14", 0 ],
+                    "source": [ "obj-54", 0 ]
+                }
+            },
+            {
+                "patchline": {
+                    "destination": [ "obj-10", 0 ],
+                    "source": [ "obj-6", 0 ]
+                }
+            },
+            {
+                "patchline": {
+                    "destination": [ "obj-58", 0 ],
+                    "source": [ "obj-62", 0 ]
                 }
             },
             {
