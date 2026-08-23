@@ -9,8 +9,30 @@
             "modernui": 1
         },
         "classnamespace": "box",
-        "rect": [ 84.0, 136.0, 1000.0, 780.0 ],
+        "rect": [ 456.0, 378.0, 1000.0, 780.0 ],
         "boxes": [
+            {
+                "box": {
+                    "id": "obj-2",
+                    "maxclass": "message",
+                    "numinlets": 2,
+                    "numoutlets": 1,
+                    "outlettype": [ "" ],
+                    "patching_rect": [ 141.75, 272.0, 29.5, 22.0 ],
+                    "text": "set"
+                }
+            },
+            {
+                "box": {
+                    "id": "obj-4",
+                    "maxclass": "newobj",
+                    "numinlets": 1,
+                    "numoutlets": 1,
+                    "outlettype": [ "bang" ],
+                    "patching_rect": [ 141.75, 238.0, 61.0, 22.0 ],
+                    "text": "savebang"
+                }
+            },
             {
                 "box": {
                     "id": "obj-52",
@@ -364,8 +386,7 @@
                     "numinlets": 2,
                     "numoutlets": 1,
                     "outlettype": [ "" ],
-                    "patching_rect": [ 187.0, 318.0, 50.0, 22.0 ],
-                    "text": "0"
+                    "patching_rect": [ 187.0, 318.0, 50.0, 22.0 ]
                 }
             },
             {
@@ -448,6 +469,12 @@
                 "patchline": {
                     "destination": [ "obj-8", 0 ],
                     "source": [ "obj-19", 0 ]
+                }
+            },
+            {
+                "patchline": {
+                    "destination": [ "obj-17", 0 ],
+                    "source": [ "obj-2", 0 ]
                 }
             },
             {
@@ -554,6 +581,12 @@
                 "patchline": {
                     "destination": [ "obj-40", 0 ],
                     "source": [ "obj-39", 1 ]
+                }
+            },
+            {
+                "patchline": {
+                    "destination": [ "obj-2", 0 ],
+                    "source": [ "obj-4", 0 ]
                 }
             },
             {
