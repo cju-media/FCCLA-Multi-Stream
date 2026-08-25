@@ -81,6 +81,7 @@
   .badge.yes { background: rgba(53,208,127,0.15); color: var(--on); }
   .badge.no { background: rgba(255,92,92,0.15); color: var(--off); }
   .badge.warn { background: rgba(245,185,66,0.15); color: var(--warn); }
+  .badge.endpoint { background: rgba(76,141,255,0.15); color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: none; letter-spacing: 0; font-size: 12px; }
 
   .feed-url {
     margin-top: 14px;
@@ -97,15 +98,13 @@
     color: var(--accent);
     word-break: break-all;
   }
-  .feed-url button {
-    flex-shrink: 0;
-  }
+  .feed-url button { flex-shrink: 0; }
 
   h2 { font-size: 14px; margin: 0 0 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 
   form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 16px; }
   label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 6px; }
-  input[type=text], input[type=time] {
+  input[type=text], input[type=password], input[type=time] {
     width: 100%;
     background: #0d0f13;
     border: 1px solid var(--border);
@@ -114,7 +113,7 @@
     padding: 9px 10px;
     font-size: 14px;
   }
-  input[type=text]:focus, input[type=time]:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  input[type=text]:focus, input[type=password]:focus, input[type=time]:focus { outline: 2px solid var(--accent); border-color: transparent; }
   .full { grid-column: 1 / -1; }
   .row { display: flex; align-items: center; gap: 10px; }
   .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 14px; }
@@ -133,6 +132,7 @@
   button.primary { background: var(--accent); border-color: var(--accent); color: #08152e; }
   button.primary:hover { filter: brightness(1.08); }
   button.ghost { background: transparent; }
+  button.danger { color: var(--off); }
   button.active { outline: 2px solid var(--accent); }
 
   .override-buttons { display: flex; gap: 8px; }
@@ -152,20 +152,36 @@
     white-space: pre-wrap;
     line-height: 1.6;
   }
+
+  .output-row {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    margin-bottom: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .output-row-head { display: flex; align-items: center; gap: 10px; }
+  .output-row-head input[type=text] { flex: 1; font-weight: 600; }
+  .output-row-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .output-row-fields .row { display: flex; gap: 8px; }
+  .output-msg { font-size: 12.5px; color: var(--on); }
+  #addOutputForm { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 4px; }
 </style>
 </head>
 <body>
 <main>
   <div>
     <h1>ATEM Status Server</h1>
-    <p class="sub">Watches the ATEM's built-in streaming state, gates it to a time window, and serves a plain 1/0 for Max's <code>[maxurl]</code>.</p>
+    <p class="sub">Watches the ATEM's built-in streaming state, gates it to a time window, and serves a plain 1/0 plus per-output RTMP URLs for Max's <code>[maxurl]</code>.</p>
   </div>
 
   <section class="panel">
     <div class="status-row">
       <div id="statusDot" class="status-dot off">0</div>
       <div class="status-meta">
-        <div><b id="statusLabel">OFF</b> &mdash; effective value served at <code>/status</code></div>
+        <div><b id="statusLabel">OFF</b> &mdash; effective value served at <code>/status</code>, shared by all outputs</div>
         <div style="margin-top:6px;">
           ATEM connected: <span id="connectedBadge" class="badge no">no</span>
           &nbsp; ATEM streaming: <span id="streamingBadge" class="badge no">no</span>
@@ -178,19 +194,7 @@
       <span id="feedUrl">http://localhost:4200/status</span>
       <button class="ghost copyBtn" data-target="feedUrl">Copy</button>
     </div>
-    <div class="feed-url">
-      <span id="rtmpUrlFeed">http://localhost:4200/rtmp-url</span>
-      <button class="ghost copyBtn" data-target="rtmpUrlFeed">Copy</button>
-    </div>
-    <p class="sub" style="margin:10px 0 0;">Two <code>[maxurl]</code> objects total: <code>/status</code> to know when to start/stop, <code>/rtmp-url</code> for the full URL to hand <code>jit.rtmp.send~</code>. The base URL and key are also available separately below, if you ever need them apart.</p>
-    <div class="feed-url" style="margin-top:14px;">
-      <span id="streamUrlFeed">http://localhost:4200/stream-url</span>
-      <button class="ghost copyBtn" data-target="streamUrlFeed">Copy</button>
-    </div>
-    <div class="feed-url">
-      <span id="streamKeyFeed">http://localhost:4200/stream-key</span>
-      <button class="ghost copyBtn" data-target="streamKeyFeed">Copy</button>
-    </div>
+    <p class="sub" style="margin:10px 0 0;">One <code>[maxurl]</code> on <code>/status</code> tells Max when to start/stop. One more <code>[maxurl]</code> per stream output below gives Max the full RTMP URL for that output.</p>
   </section>
 
   <section class="panel">
@@ -200,6 +204,31 @@
       <button data-mode="on" class="modeBtn">Force ON</button>
       <button data-mode="off" class="modeBtn">Force OFF</button>
     </div>
+  </section>
+
+  <section class="panel">
+    <h2>Stream Outputs</h2>
+    <div id="outputsList"></div>
+
+    <form id="addOutputForm">
+      <div class="full"><label style="margin-bottom:0;">Add a new output</label></div>
+      <div class="full">
+        <label for="newOutName">Name</label>
+        <input type="text" id="newOutName" placeholder="YouTube Main" />
+      </div>
+      <div>
+        <label for="newOutUrl">Stream URL (RTMP destination)</label>
+        <input type="text" id="newOutUrl" placeholder="rtmp://your-server/live" />
+      </div>
+      <div>
+        <label for="newOutKey">Stream key</label>
+        <input type="password" id="newOutKey" placeholder="stream key" />
+      </div>
+      <div class="full row">
+        <button type="submit" class="primary">Add Output</button>
+        <span id="addOutputMsg" class="output-msg"></span>
+      </div>
+    </form>
   </section>
 
   <section class="panel">
@@ -217,27 +246,21 @@
         <label for="windowEnd">Window end</label>
         <input type="time" id="windowEnd" />
       </div>
+      <div class="full">
+        <label>Days active</label>
+        <div class="row" id="dayButtons" style="flex-wrap:wrap;">
+          <button type="button" class="dayBtn" data-day="0">Sun</button>
+          <button type="button" class="dayBtn" data-day="1">Mon</button>
+          <button type="button" class="dayBtn" data-day="2">Tue</button>
+          <button type="button" class="dayBtn" data-day="3">Wed</button>
+          <button type="button" class="dayBtn" data-day="4">Thu</button>
+          <button type="button" class="dayBtn" data-day="5">Fri</button>
+          <button type="button" class="dayBtn" data-day="6">Sat</button>
+        </div>
+      </div>
       <div class="full checkbox-row">
         <input type="checkbox" id="armed" />
         <label for="armed" style="margin:0;">Armed (uncheck to ignore ATEM going live entirely)</label>
-      </div>
-      <div class="full">
-        <label for="streamUrl">Stream URL (RTMP destination)</label>
-        <input type="text" id="streamUrl" placeholder="rtmp://your-server/live" />
-      </div>
-      <div class="full">
-        <label for="streamKey">Stream key</label>
-        <div class="row">
-          <input type="password" id="streamKey" placeholder="stream key" style="flex:1;" />
-          <button type="button" id="toggleKeyBtn" class="ghost">Show</button>
-        </div>
-      </div>
-      <div class="full">
-        <label>Full RTMP URL that /rtmp-url will serve (url + key joined)</label>
-        <div class="feed-url" style="margin-top:0;">
-          <span id="rtmpPreview">(set Stream URL and Stream key above)</span>
-          <button type="button" id="copyRtmpPreview" class="ghost">Copy</button>
-        </div>
       </div>
       <div class="full row">
         <button type="submit" class="primary">Save</button>
@@ -263,12 +286,15 @@ const logEl = document.getElementById('log');
 const feedUrl = document.getElementById('feedUrl');
 const form = document.getElementById('configForm');
 const saveMsg = document.getElementById('saveMsg');
+const outputsList = document.getElementById('outputsList');
+const addOutputForm = document.getElementById('addOutputForm');
+const addOutputMsg = document.getElementById('addOutputMsg');
 let formFocused = false;
+let outputFieldFocused = false;
+let daysDirty = false; // true while the day buttons have unsaved changes
+const revealedKeys = new Set(); // output ids whose key is currently shown in plaintext
 
 feedUrl.textContent = `${location.origin}/status`;
-document.getElementById('rtmpUrlFeed').textContent = `${location.origin}/rtmp-url`;
-document.getElementById('streamUrlFeed').textContent = `${location.origin}/stream-url`;
-document.getElementById('streamKeyFeed').textContent = `${location.origin}/stream-key`;
 document.querySelectorAll('.copyBtn').forEach((btn) => {
   btn.addEventListener('click', () => {
     const target = document.getElementById(btn.dataset.target);
@@ -276,9 +302,11 @@ document.querySelectorAll('.copyBtn').forEach((btn) => {
   });
 });
 
-const streamUrlInput = document.getElementById('streamUrl');
-const streamKeyInput = document.getElementById('streamKey');
-const rtmpPreview = document.getElementById('rtmpPreview');
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
 
 function joinRtmp(url, key) {
   url = (url || '').trim();
@@ -288,36 +316,158 @@ function joinRtmp(url, key) {
   return url.replace(/\/+$/, '') + '/' + key.replace(/^\/+/, '');
 }
 
-function updateRtmpPreview() {
-  const url = streamUrlInput.value;
-  const key = streamKeyInput.value;
-  const full = joinRtmp(url, key);
-  if (!full) {
-    rtmpPreview.textContent = '(set Stream URL and Stream key above)';
-    return;
-  }
-  const showing = streamKeyInput.type === 'text';
-  rtmpPreview.textContent = showing || !key.trim() ? full : joinRtmp(url, '•'.repeat(key.trim().length));
+// Bullet count for a masked preview - matches the length joinRtmp() would
+// actually use (leading slashes stripped), so the mask isn't off by however
+// many slashes someone typed at the start of the key.
+function maskedKeyLength(key) {
+  return (key || '').trim().replace(/^\/+/, '').length;
 }
-
-document.getElementById('copyRtmpPreview').addEventListener('click', () => {
-  navigator.clipboard.writeText(joinRtmp(streamUrlInput.value, streamKeyInput.value));
-});
-
-streamUrlInput.addEventListener('input', updateRtmpPreview);
-streamKeyInput.addEventListener('input', updateRtmpPreview);
-
-document.getElementById('toggleKeyBtn').addEventListener('click', (e) => {
-  const showing = streamKeyInput.type === 'text';
-  streamKeyInput.type = showing ? 'password' : 'text';
-  e.target.textContent = showing ? 'Show' : 'Hide';
-  updateRtmpPreview();
-});
 
 function setBadge(el, ok, yesText = 'yes', noText = 'no') {
   el.textContent = ok ? yesText : noText;
   el.className = 'badge ' + (ok ? 'yes' : 'no');
 }
+
+// ---- Stream outputs list ----
+
+function renderOutputs(outputs) {
+  if (outputs.length === 0) {
+    outputsList.innerHTML = '<p class="sub" style="margin-bottom:14px;">No stream outputs yet — add one below.</p>';
+    return;
+  }
+  outputsList.innerHTML = outputs
+    .map((o) => {
+      const revealed = revealedKeys.has(o.id);
+      const preview = revealed || !o.streamKey ? joinRtmp(o.streamUrl, o.streamKey) : joinRtmp(o.streamUrl, '•'.repeat(maskedKeyLength(o.streamKey)));
+      return `
+      <div class="output-row" data-id="${o.id}">
+        <div class="output-row-head">
+          <input type="text" class="outName" value="${escapeHtml(o.name)}" placeholder="Name" />
+          <span class="badge endpoint">${o.endpoint}</span>
+          <button type="button" class="ghost copyEndpointBtn" data-endpoint="${location.origin}${o.endpoint}">Copy URL</button>
+          <button type="button" class="ghost danger removeOutputBtn">Remove</button>
+        </div>
+        <div class="output-row-fields">
+          <input type="text" class="outUrl" value="${escapeHtml(o.streamUrl)}" placeholder="rtmp://your-server/live" />
+          <div class="row">
+            <input type="${revealed ? 'text' : 'password'}" class="outKey" value="${escapeHtml(o.streamKey)}" placeholder="stream key" style="flex:1;" />
+            <button type="button" class="ghost toggleOutKeyBtn">${revealed ? 'Hide' : 'Show'}</button>
+          </div>
+        </div>
+        <div class="feed-url" style="margin-top:0;">
+          <span class="outPreview">${escapeHtml(preview) || '(set Stream URL and Stream key)'}</span>
+        </div>
+        <div class="row">
+          <button type="button" class="primary saveOutputBtn">Save</button>
+          <span class="output-msg"></span>
+        </div>
+      </div>`;
+    })
+    .join('');
+}
+
+function updateRowPreview(row) {
+  const url = row.querySelector('.outUrl').value;
+  const keyInput = row.querySelector('.outKey');
+  const key = keyInput.value;
+  const revealed = keyInput.type === 'text';
+  const preview = revealed || !key.trim() ? joinRtmp(url, key) : joinRtmp(url, '•'.repeat(maskedKeyLength(key)));
+  row.querySelector('.outPreview').textContent = preview || '(set Stream URL and Stream key)';
+}
+
+outputsList.addEventListener('focusin', (e) => {
+  if (e.target.matches('input')) outputFieldFocused = true;
+});
+outputsList.addEventListener('focusout', (e) => {
+  if (e.target.matches('input')) outputFieldFocused = false;
+});
+
+outputsList.addEventListener('input', (e) => {
+  const row = e.target.closest('.output-row');
+  if (row) updateRowPreview(row);
+});
+
+outputsList.addEventListener('click', async (e) => {
+  const row = e.target.closest('.output-row');
+
+  if (e.target.classList.contains('copyEndpointBtn')) {
+    navigator.clipboard.writeText(e.target.dataset.endpoint);
+    return;
+  }
+  if (!row) return;
+  const id = row.dataset.id;
+
+  if (e.target.classList.contains('toggleOutKeyBtn')) {
+    const keyInput = row.querySelector('.outKey');
+    const revealed = keyInput.type === 'text';
+    keyInput.type = revealed ? 'password' : 'text';
+    e.target.textContent = revealed ? 'Show' : 'Hide';
+    if (revealed) revealedKeys.delete(id); else revealedKeys.add(id);
+    updateRowPreview(row);
+    return;
+  }
+
+  if (e.target.classList.contains('saveOutputBtn')) {
+    const body = {
+      name: row.querySelector('.outName').value.trim(),
+      streamUrl: row.querySelector('.outUrl').value.trim(),
+      streamKey: row.querySelector('.outKey').value.trim(),
+    };
+    const res = await fetch(`/outputs/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const msgEl = row.querySelector('.output-msg');
+    if (res.ok) {
+      msgEl.style.color = 'var(--on)';
+      msgEl.textContent = 'Saved.';
+      setTimeout(() => (msgEl.textContent = ''), 2000);
+    } else {
+      const err = await res.json();
+      msgEl.style.color = 'var(--off)';
+      msgEl.textContent = 'Error: ' + err.error;
+    }
+    refresh();
+    return;
+  }
+
+  if (e.target.classList.contains('removeOutputBtn')) {
+    const name = row.querySelector('.outName').value.trim() || 'this output';
+    if (!confirm(`Remove "${name}"? Its endpoint will stop responding, and its /urlN will never be reused.`)) return;
+    await fetch(`/outputs/${id}`, { method: 'DELETE' });
+    refresh();
+  }
+});
+
+addOutputForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const body = {
+    name: document.getElementById('newOutName').value.trim(),
+    streamUrl: document.getElementById('newOutUrl').value.trim(),
+    streamKey: document.getElementById('newOutKey').value.trim(),
+  };
+  const res = await fetch('/outputs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (res.ok) {
+    document.getElementById('newOutName').value = '';
+    document.getElementById('newOutUrl').value = '';
+    document.getElementById('newOutKey').value = '';
+    addOutputMsg.style.color = 'var(--on)';
+    addOutputMsg.textContent = 'Added.';
+    setTimeout(() => (addOutputMsg.textContent = ''), 2000);
+  } else {
+    const err = await res.json();
+    addOutputMsg.style.color = 'var(--off)';
+    addOutputMsg.textContent = 'Error: ' + err.error;
+  }
+  refresh();
+});
+
+// ---- Main state polling ----
 
 async function refresh() {
   try {
@@ -340,34 +490,49 @@ async function refresh() {
       b.classList.toggle('active', b.dataset.mode === data.runtime.mode);
     });
 
+    if (!outputFieldFocused) {
+      renderOutputs(data.outputs || []);
+    }
+
     if (!formFocused) {
       document.getElementById('atemIp').value = data.config.atemIp || '';
       document.getElementById('windowStart').value = data.config.windowStart || '';
       document.getElementById('windowEnd').value = data.config.windowEnd || '';
       document.getElementById('armed').checked = !!data.config.armed;
-      document.getElementById('streamUrl').value = data.config.streamUrl || '';
-      document.getElementById('streamKey').value = data.config.streamKey || '';
-      updateRtmpPreview();
+    }
+
+    if (!daysDirty) {
+      const days = new Set(data.config.windowDays || []);
+      document.querySelectorAll('.dayBtn').forEach((b) => {
+        b.classList.toggle('active', days.has(Number(b.dataset.day)));
+      });
     }
   } catch (e) {
     lastReason.textContent = 'Could not reach server: ' + e.message;
   }
 }
 
-document.querySelectorAll('input').forEach((el) => {
+document.querySelectorAll('#configForm input').forEach((el) => {
   el.addEventListener('focus', () => (formFocused = true));
   el.addEventListener('blur', () => (formFocused = false));
 });
 
+document.querySelectorAll('.dayBtn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    btn.classList.toggle('active');
+    daysDirty = true;
+  });
+});
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
+  const windowDays = Array.from(document.querySelectorAll('.dayBtn.active')).map((b) => Number(b.dataset.day));
   const body = {
     atemIp: document.getElementById('atemIp').value.trim(),
     windowStart: document.getElementById('windowStart').value,
     windowEnd: document.getElementById('windowEnd').value,
+    windowDays,
     armed: document.getElementById('armed').checked,
-    streamUrl: document.getElementById('streamUrl').value.trim(),
-    streamKey: document.getElementById('streamKey').value.trim(),
   };
   const res = await fetch('/config', {
     method: 'POST',
@@ -375,6 +540,7 @@ form.addEventListener('submit', async (e) => {
     body: JSON.stringify(body),
   });
   if (res.ok) {
+    daysDirty = false;
     saveMsg.textContent = 'Saved.';
     setTimeout(() => (saveMsg.textContent = ''), 2000);
   } else {

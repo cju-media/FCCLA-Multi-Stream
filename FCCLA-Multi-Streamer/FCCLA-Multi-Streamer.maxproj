@@ -1,8 +1,8 @@
 {
-    "name": "FCCLA-Shorts-Streamer",
+    "name": "FCCLA-Multi-Streamer",
     "version": 1,
     "creationdate": 3870210534,
-    "modificationdate": 3870347656,
+    "modificationdate": 3870470137,
     "viewrect": [ 25.0, 111.0, 300.0, 500.0 ],
     "autoorganize": 1,
     "hideprojectwindow": 0,
@@ -16,6 +16,14 @@
                 "toplevel": 1
             },
             "cameraGrabber_me.maxpat": {
+                "kind": "patcher",
+                "local": 1
+            },
+            "isStandalone.maxpat": {
+                "kind": "patcher",
+                "local": 1
+            },
+            "changeMessage.maxpat": {
                 "kind": "patcher",
                 "local": 1
             }

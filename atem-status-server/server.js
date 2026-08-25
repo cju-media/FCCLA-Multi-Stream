@@ -4,26 +4,37 @@
  * Standalone Node/Express server. Connects to a Blackmagic ATEM, watches its
  * built-in streaming state, and exposes:
  *
- *   GET  /status      -> plain text "1" or "0"        <-- point Max's [maxurl] here
- *   GET  /rtmp-url    -> plain text full "url/key"    <-- and this [maxurl] for jit.rtmp.send~'s @url
- *   GET  /stream-url  -> plain text RTMP base URL only (optional, if you need it separately)
- *   GET  /stream-key  -> plain text stream key only   (optional, if you need it separately)
- *   GET  /state       -> JSON, full state (for the web UI)
- *   GET  /debug       -> JSON, raw atem.state.streaming (for diagnosing enum drift)
- *   POST /config      -> { atemIp, windowStart, windowEnd, armed, streamUrl, streamKey } - update + persist
- *   POST /override    -> { mode: "auto" | "on" | "off" } - manual override
- *   GET  /            -> the configuration web UI
+ *   GET    /status       -> plain text "1" or "0"                     <-- point Max's [maxurl] here
+ *   GET    /url1         -> plain text full "url/key" for output #1   <-- one [maxurl] per output
+ *   GET    /url2         -> plain text full "url/key" for output #2, etc.
+ *   GET    /outputs      -> JSON, list of configured outputs (for the web UI)
+ *   POST   /outputs      -> { name, streamUrl, streamKey } - add a new output, assigns it the next /urlN
+ *   PUT    /outputs/:id  -> { name, streamUrl, streamKey } - update an existing output (partial)
+ *   DELETE /outputs/:id  -> remove an output (its /urlN slot is retired, never reused)
+ *   GET    /state        -> JSON, full state (for the web UI)
+ *   GET    /debug        -> JSON, raw atem.state.streaming (for diagnosing enum drift)
+ *   POST   /config       -> { atemIp, windowStart, windowEnd, windowDays, armed } - update + persist
+ *   POST   /override     -> { mode: "auto" | "on" | "off" } - manual override
+ *   GET    /             -> the configuration web UI
  *
- * "1" means: the ATEM went live (built-in streaming) while the current time
+ * "1" means: the ATEM went live (built-in streaming) while the current day
+ * was one of windowDays (0=Sun ... 6=Sat, default Sunday only) and the time
  * was inside [windowStart, windowEnd), and it hasn't stopped since. It
  * latches - if the window closes while the ATEM is still streaming, it
  * stays "1" until the ATEM actually stops. If the ATEM goes live outside
- * the window, it stays "0". Disarming forces "0" immediately.
+ * the window, it stays "0". Disarming forces "0" immediately. This one
+ * decision is shared by every output - all outputs start/stop together.
+ *
+ * Each output gets a permanent numbered endpoint (/url1, /url2, ...)
+ * assigned the moment it's created, based on an ever-increasing counter -
+ * not its position in the list - so deleting an earlier output never
+ * shifts what a later one's URL means.
  *
  * This process is meant to run on its own machine ("elsewhere"), reachable
  * over the network from wherever Max is running.
  */
 
+const crypto = require('crypto');
 const express = require('express');
 const fs = require('fs');
 const os = require('os');
@@ -43,27 +54,63 @@ const PORT = process.env.PORT || 4200;
 const CONFIG_PATH = path.join(__dirname, 'config.json');
 
 // ---- Config (persisted to disk) ----
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 const DEFAULT_CONFIG = {
   atemIp: '',
-  windowStart: '09:30',
+  windowStart: '09:00',
   windowEnd: '11:00',
+  windowDays: [0], // days of week the window applies on - 0=Sun ... 6=Sat (Date#getDay()); default Sunday only
   armed: true,
-  streamUrl: '',
-  streamKey: '',
+  outputs: [], // [{ id, slot, name, streamUrl, streamKey }, ...]
+  nextSlot: 1, // ever-increasing - never reused, even after deletes
 };
 
-// Never write the stream key to a log line in full - it's a credential.
+function fmtDays(days) {
+  if (!Array.isArray(days) || days.length === 0) return '(no days selected)';
+  return [...days]
+    .sort((a, b) => a - b)
+    .map((d) => DAY_NAMES[d])
+    .join(', ');
+}
+
+// Never write a stream key to a log line in full - it's a credential.
 function redactedConfig(c) {
-  return { ...c, streamKey: c.streamKey ? `(set, ${c.streamKey.length} chars)` : '' };
+  return {
+    ...c,
+    outputs: (c.outputs || []).map((o) => ({
+      ...o,
+      streamKey: o.streamKey ? `(set, ${o.streamKey.length} chars)` : '',
+    })),
+  };
 }
 
 function loadConfig() {
+  let loaded;
   try {
-    const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
-    return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+    loaded = { ...DEFAULT_CONFIG, ...JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) };
   } catch {
-    return { ...DEFAULT_CONFIG };
+    loaded = { ...DEFAULT_CONFIG };
   }
+
+  // Migrate the old single-output shape (streamUrl/streamKey at the config
+  // root, from before multi-output support) into outputs[0].
+  if ((!loaded.outputs || loaded.outputs.length === 0) && (loaded.streamUrl || loaded.streamKey)) {
+    loaded.outputs = [
+      {
+        id: crypto.randomUUID(),
+        slot: loaded.nextSlot || 1,
+        name: 'Stream 1',
+        streamUrl: loaded.streamUrl || '',
+        streamKey: loaded.streamKey || '',
+      },
+    ];
+    loaded.nextSlot = (loaded.nextSlot || 1) + 1;
+  }
+  delete loaded.streamUrl;
+  delete loaded.streamKey;
+
+  return loaded;
 }
 
 function saveConfig() {
@@ -71,6 +118,7 @@ function saveConfig() {
 }
 
 let config = loadConfig();
+saveConfig(); // idempotent - also flushes the legacy-config migration to disk immediately
 
 // ---- Runtime state ----
 const runtime = {
@@ -108,12 +156,20 @@ function parseHM(str) {
   return h * 60 + min;
 }
 
-function inWindow(d = new Date()) {
+function dayAllowed(d = new Date()) {
+  return Array.isArray(config.windowDays) && config.windowDays.includes(d.getDay());
+}
+
+function inTimeRange(d = new Date()) {
   const startMin = parseHM(config.windowStart);
   const endMin = parseHM(config.windowEnd);
   if (startMin === null || endMin === null) return false;
   const nowMin = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
   return nowMin >= startMin && nowMin <= endMin;
+}
+
+function inWindow(d = new Date()) {
+  return dayAllowed(d) && inTimeRange(d);
 }
 
 function effectiveValue() {
@@ -175,11 +231,18 @@ function onAtemWentLive() {
     logLine(`[trigger] ${runtime.lastReason}`);
     return;
   }
-  if (inWindow()) {
+
+  const now = new Date();
+  const when = `${DAY_NAMES[now.getDay()]} ${now.toLocaleTimeString()}`;
+  const windowDesc = `${fmtDays(config.windowDays)} ${config.windowStart}-${config.windowEnd}`;
+
+  if (inWindow(now)) {
     runtime.shouldStream = true;
-    runtime.lastReason = `ATEM went live at ${new Date().toLocaleTimeString()} inside ${config.windowStart}-${config.windowEnd} -> streaming ON`;
+    runtime.lastReason = `ATEM went live at ${when} (inside ${windowDesc}) -> streaming ON`;
+  } else if (!dayAllowed(now)) {
+    runtime.lastReason = `ATEM went live at ${when}, but that day isn't in the allowed window (${windowDesc}) -> ignoring`;
   } else {
-    runtime.lastReason = `ATEM went live at ${new Date().toLocaleTimeString()} outside ${config.windowStart}-${config.windowEnd} -> ignoring`;
+    runtime.lastReason = `ATEM went live at ${when}, outside the ${config.windowStart}-${config.windowEnd} time range -> ignoring`;
   }
   logLine(`[trigger] ${runtime.lastReason}`);
 }
@@ -238,7 +301,11 @@ app.get('/state', (req, res) => {
     },
     effective: effectiveValue(),
     inWindowNow: inWindow(),
-    fullRtmpUrl: fullRtmpUrl(config.streamUrl, config.streamKey),
+    outputs: config.outputs.map((o) => ({
+      ...o,
+      endpoint: outputEndpoint(o),
+      fullRtmpUrl: fullRtmpUrl(o.streamUrl, o.streamKey),
+    })),
   });
 });
 
@@ -246,20 +313,8 @@ app.get('/debug', (req, res) => {
   res.json({ streaming: (atem.state && atem.state.streaming) || null });
 });
 
-app.get('/rtmp-url', (req, res) => {
-  res.type('text/plain').send(fullRtmpUrl(config.streamUrl, config.streamKey));
-});
-
-app.get('/stream-url', (req, res) => {
-  res.type('text/plain').send(config.streamUrl || '');
-});
-
-app.get('/stream-key', (req, res) => {
-  res.type('text/plain').send(config.streamKey || '');
-});
-
 app.post('/config', (req, res) => {
-  const { atemIp, windowStart, windowEnd, armed, streamUrl, streamKey } = req.body || {};
+  const { atemIp, windowStart, windowEnd, windowDays, armed } = req.body || {};
 
   if (windowStart !== undefined && parseHM(windowStart) === null) {
     return res.status(400).json({ error: 'windowStart must be HH:MM' });
@@ -267,15 +322,21 @@ app.post('/config', (req, res) => {
   if (windowEnd !== undefined && parseHM(windowEnd) === null) {
     return res.status(400).json({ error: 'windowEnd must be HH:MM' });
   }
+  if (
+    windowDays !== undefined &&
+    (!Array.isArray(windowDays) || windowDays.some((d) => !Number.isInteger(d) || d < 0 || d > 6))
+  ) {
+    return res.status(400).json({ error: 'windowDays must be an array of integers 0-6 (0=Sun ... 6=Sat)' });
+  }
 
   const prevIp = config.atemIp;
   config = {
+    ...config,
     atemIp: atemIp !== undefined ? String(atemIp).trim() : config.atemIp,
     windowStart: windowStart !== undefined ? windowStart : config.windowStart,
     windowEnd: windowEnd !== undefined ? windowEnd : config.windowEnd,
+    windowDays: windowDays !== undefined ? [...new Set(windowDays)].sort((a, b) => a - b) : config.windowDays,
     armed: armed !== undefined ? !!armed : config.armed,
-    streamUrl: streamUrl !== undefined ? String(streamUrl).trim() : config.streamUrl,
-    streamKey: streamKey !== undefined ? String(streamKey).trim() : config.streamKey,
   };
   saveConfig();
   logLine(`[config] updated: ${JSON.stringify(redactedConfig(config))}`);
@@ -288,6 +349,68 @@ app.post('/config', (req, res) => {
   }
 
   res.json({ config });
+});
+
+// ---- Stream outputs (multiple named RTMP destinations) ----
+function outputEndpoint(o) {
+  return `/url${o.slot}`;
+}
+
+app.get('/outputs', (req, res) => {
+  res.json({ outputs: config.outputs.map((o) => ({ ...o, endpoint: outputEndpoint(o) })) });
+});
+
+app.post('/outputs', (req, res) => {
+  const { name, streamUrl, streamKey } = req.body || {};
+  const output = {
+    id: crypto.randomUUID(),
+    slot: config.nextSlot,
+    name: name !== undefined ? String(name).trim() : `Stream ${config.nextSlot}`,
+    streamUrl: streamUrl !== undefined ? String(streamUrl).trim() : '',
+    streamKey: streamKey !== undefined ? String(streamKey).trim() : '',
+  };
+  config = { ...config, outputs: [...config.outputs, output], nextSlot: config.nextSlot + 1 };
+  saveConfig();
+  logLine(`[outputs] added "${output.name}" -> ${outputEndpoint(output)}`);
+  res.status(201).json({ output: { ...output, endpoint: outputEndpoint(output) } });
+});
+
+app.put('/outputs/:id', (req, res) => {
+  const idx = config.outputs.findIndex((o) => o.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: 'no output with that id' });
+
+  const { name, streamUrl, streamKey } = req.body || {};
+  const existing = config.outputs[idx];
+  const updated = {
+    ...existing,
+    name: name !== undefined ? String(name).trim() : existing.name,
+    streamUrl: streamUrl !== undefined ? String(streamUrl).trim() : existing.streamUrl,
+    streamKey: streamKey !== undefined ? String(streamKey).trim() : existing.streamKey,
+  };
+  const outputs = [...config.outputs];
+  outputs[idx] = updated;
+  config = { ...config, outputs };
+  saveConfig();
+  logLine(`[outputs] updated "${updated.name}" (${outputEndpoint(updated)})`);
+  res.json({ output: { ...updated, endpoint: outputEndpoint(updated) } });
+});
+
+app.delete('/outputs/:id', (req, res) => {
+  const existing = config.outputs.find((o) => o.id === req.params.id);
+  if (!existing) return res.status(404).json({ error: 'no output with that id' });
+
+  config = { ...config, outputs: config.outputs.filter((o) => o.id !== req.params.id) };
+  saveConfig();
+  logLine(`[outputs] removed "${existing.name}" (${outputEndpoint(existing)} retired, will not be reused)`);
+  res.json({ ok: true });
+});
+
+// Matches /url1, /url2, ... - one per configured output, permanently
+// assigned by slot number regardless of the output's position in the list.
+app.get(/^\/url(\d+)$/, (req, res) => {
+  const slot = Number(req.params[0]);
+  const output = config.outputs.find((o) => o.slot === slot);
+  res.type('text/plain').send(output ? fullRtmpUrl(output.streamUrl, output.streamKey) : '');
 });
 
 app.post('/override', (req, res) => {
@@ -308,10 +431,15 @@ app.listen(PORT, '0.0.0.0', () => {
     .map((n) => n.address);
 
   logLine(`atem-status-server listening on port ${PORT}`);
-  logLine(`web UI:            http://localhost:${PORT}/`);
-  logLine(`maxurl status:     http://localhost:${PORT}/status`);
-  logLine(`maxurl rtmp-url:   http://localhost:${PORT}/rtmp-url`);
-  logLine(`(optional separate: /stream-url, /stream-key)`);
+  logLine(`web UI:         http://localhost:${PORT}/`);
+  logLine(`maxurl status:  http://localhost:${PORT}/status`);
+  if (config.outputs.length === 0) {
+    logLine('no stream outputs configured yet - add one in the web UI');
+  } else {
+    config.outputs.forEach((o) => {
+      logLine(`maxurl ${o.name}: http://localhost:${PORT}${outputEndpoint(o)}`);
+    });
+  }
   addrs.forEach((a) => {
     logLine(`  reachable on this network at http://${a}:${PORT}/status`);
   });
